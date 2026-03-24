@@ -27,7 +27,7 @@ def run_price_tracker():
         
         # Extract price and clean the currency symbol
         price_text = item.find('p', class_='price_color').text
-        clean_price = float(price_text.replace('£', ''))
+        clean_price = float(price_text.replace('£', '').replace('Â', ''))
         
         # Add to our data list
         scraped_data.append({'Product_Name': title, 'Price': clean_price})
