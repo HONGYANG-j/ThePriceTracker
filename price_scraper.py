@@ -3,48 +3,63 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import os
 
+# 1. Fetch Cloud Secrets (Securely getting Telegram credentials)
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
+def send_telegram_alert(message):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("⚠️ Telegram credentials missing in environment. Skipping alert.")
+        return
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+    try:
+        requests.post(url, json=payload)
+        print("📲 BOOM! Telegram push notification sent successfully!")
+    except Exception as e:
+        print(f"❌ Failed to send Telegram alert: {e}")
+
 def run_price_tracker():
-    print("🕷️ Initiating Competitor Price Scraper...")
+    print("🕷️ Initiating Competitor Price Scraper & Watchdog...")
     
-    # Target URL (A safe sandbox site built for scraping practice)
-    url = "http://books.toscrape.com/catalogue/category/books/science_22/index.html"
+    url = "https://books.toscrape.com/catalogue/category/books/science_22/index.html"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
-    # Disguise our script as a normal web browser
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    
-    print(f"📡 Connecting to target website...")
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=15)
     soup = BeautifulSoup(response.text, 'html.parser')
-    
-    # Find all product containers
     products = soup.find_all('article', class_='product_pod')
     
     scraped_data = []
+    alert_messages = [] # Container for our emergency alerts
     
     for item in products:
-        # Extract product title
         title = item.h3.a['title']
-        
-        # Extract price and clean the currency symbol
         price_text = item.find('p', class_='price_color').text
         clean_price = float(price_text.replace('£', '').replace('Â', ''))
-        
-        # Add to our data list
         scraped_data.append({'Product_Name': title, 'Price': clean_price})
         
-    # Convert to a data table (using your Pandas skills)
+        # CORE LOGIC: If price drops below £40, trigger the alarm!
+        if clean_price < 40:
+            alert_messages.append(f"🚨 *PRICE DROP:* {title} is now *£{clean_price}*")
+            
     df = pd.DataFrame(scraped_data)
-    
-    # Advanced logic: Flag any product priced under 40 as a "Price Drop Alert"
-    df['Status'] = df['Price'].apply(lambda x: '🚨 ALERT: Underpriced' if x < 40 else 'Normal')
-    
-    # Save the intel
     os.makedirs("output", exist_ok=True)
-    output_path = "output/competitor_pricing_intel.csv"
-    df.to_csv(output_path, index=False)
+    df.to_csv("output/competitor_pricing_intel.csv", index=False)
     
-    print(f"✅ Successfully extracted pricing for {len(products)} products!")
-    print(f"📊 Market intelligence report saved to: {output_path}")
+    print(f"✅ Extracted pricing for {len(products)} products.")
+    
+    # 2. The Final Strike: Send the alert if targets are found
+    if alert_messages:
+        print("🔔 Underpriced items detected! Triggering Telegram Bot...")
+        final_message = "📉 *COMPETITOR PRICE ALERT*\n\n" + "\n".join(alert_messages)
+        send_telegram_alert(final_message)
+    else:
+        print("✅ All competitor prices are within normal range. No alerts triggered.")
 
 if __name__ == "__main__":
     run_price_tracker()
